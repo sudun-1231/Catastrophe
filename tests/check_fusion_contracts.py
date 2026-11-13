@@ -169,6 +169,9 @@ def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=N
     if data[0]==14:
      lib.set_responsei(duel,option_index)
      continue
+    if data[0] in (21,25):
+     lib.set_responseb(duel,C.create_string_buffer(bytes(range(data[2]))))
+     continue
     if data[0] in (12,13):
      lib.set_responsei(duel,1)
      continue
