@@ -1,57 +1,59 @@
--- CATastrophe alpha: partial implementation only. See IMPLEMENTATION_STATUS.md.
+-- Catastrophe Alpha 0.12: updated summon follow-up and effect 2.
 local s,id=GetID()
 local SET_CAT=0xfcb
-local function catfilter(c)
-    return c:IsSetCard(SET_CAT) and c:IsAbleToHand()
-end
-local function catsearchtg(e,tp,eg,ep,ev,re,r,rp,chk)
-    if chk==0 then return Duel.IsExistingMatchingCard(catfilter,tp,LOCATION_DECK+LOCATION_GRAVE+LOCATION_REMOVED,0,1,nil) end
-    Duel.SetOperationInfo(0,CATEGORY_TOHAND,nil,1,tp,LOCATION_DECK+LOCATION_GRAVE+LOCATION_REMOVED)
-end
-local function catsearchop(e,tp,eg,ep,ev,re,r,rp)
-    Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_ATOHAND)
-    local g=Duel.SelectMatchingCard(tp,catfilter,tp,LOCATION_DECK+LOCATION_GRAVE+LOCATION_REMOVED,0,1,1,nil)
-    if #g>0 then Duel.SendtoHand(g,nil,REASON_EFFECT) Duel.ConfirmCards(1-tp,g) end
-end
-
 function s.initial_effect(c)
-    s.register_special(c)
-    -- Supplemental action when Special Summoned by the custom procedure
-    local ep=Effect.CreateEffect(c)
-    ep:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_TRIGGER_O)
-    ep:SetProperty(EFFECT_FLAG_DELAY)
-    ep:SetCode(EVENT_SPSUMMON_SUCCESS)
-    ep:SetCondition(s.postcon)
-    ep:SetTarget(s.posttg)
-    ep:SetOperation(s.postop)
-    c:RegisterEffect(ep)
-    -- Guardian summon effect: set a Catastrophe spell/trap from Deck/GY/banished
+    local e1=Effect.CreateEffect(c)
+    e1:SetDescription(aux.Stringid(id,0))
+    e1:SetCategory(CATEGORY_DESTROY+CATEGORY_SPECIAL_SUMMON+CATEGORY_SEARCH)
+    e1:SetType(EFFECT_TYPE_IGNITION)
+    e1:SetRange(LOCATION_HAND)
+    e1:SetCountLimit(1,id)
+    e1:SetTarget(s.sptarget)
+    e1:SetOperation(s.spoperation)
+    c:RegisterEffect(e1)
     local e2=Effect.CreateEffect(c)
-    e2:SetCategory(CATEGORY_SEARCH)
-    e2:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_TRIGGER_O)
-    e2:SetProperty(EFFECT_FLAG_DELAY)
-    e2:SetCode(EVENT_SUMMON_SUCCESS)
+    e2:SetDescription(aux.Stringid(id,1))
+    e2:SetType(EFFECT_TYPE_IGNITION)
+    e2:SetRange(LOCATION_MZONE)
     e2:SetCountLimit(1,198013000+(id-98013000)*10+1)
-    e2:SetTarget(s.settg)
-    e2:SetOperation(s.setop)
+    e2:SetCategory(CATEGORY_TODECK)
+    e2:SetCost(s.effect2cost)
+    e2:SetTarget(s.effect2target)
+    e2:SetOperation(s.effect2operation)
     c:RegisterEffect(e2)
-    local e3=e2:Clone()
-    e3:SetCode(EVENT_SPSUMMON_SUCCESS)
-    c:RegisterEffect(e3)
     s.fuse_register(c,id)
 end
-
-function s.setfilter(c)
-    return c:IsSetCard(SET_CAT) and c:IsSpellTrap() and c:IsSSetable()
+function s.deckdestroy(c)
+    return c:IsSetCard(SET_CAT) and c:IsDestructable()
 end
-function s.settg(e,tp,eg,ep,ev,re,r,rp,chk)
-    if chk==0 then return Duel.GetLocationCount(tp,LOCATION_SZONE)>0 and Duel.IsExistingMatchingCard(s.setfilter,tp,LOCATION_DECK+LOCATION_GRAVE+LOCATION_REMOVED,0,1,nil) end
+function s.sptarget(e,tp,eg,ep,ev,re,r,rp,chk)
+    local c=e:GetHandler()
+    if chk==0 then return Duel.GetLocationCount(tp,LOCATION_MZONE)>0
+        and c:IsCanBeSpecialSummoned(e,0,tp,false,false)
+        and Duel.IsExistingMatchingCard(s.deckdestroy,tp,LOCATION_DECK,0,1,nil) end
+    Duel.SetOperationInfo(0,CATEGORY_DESTROY,nil,1,tp,LOCATION_DECK)
+    Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,c,1,0,0)
 end
-function s.setop(e,tp,eg,ep,ev,re,r,rp)
+function s.spoperation(e,tp)
+    local c=e:GetHandler()
+    if not c:IsRelateToEffect(e) or not c:IsLocation(LOCATION_HAND) then return end
+    Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_DESTROY)
+    local g=Duel.SelectMatchingCard(tp,s.deckdestroy,tp,LOCATION_DECK,0,1,1,nil)
+    if g:GetCount()==0 or Duel.Destroy(g,REASON_EFFECT)==0 then return end
+    if Duel.GetLocationCount(tp,LOCATION_MZONE)<=0 or not c:IsRelateToEffect(e) then return end
+    if Duel.SpecialSummon(c,0,tp,tp,false,false,POS_FACEUP)==0 then return end
+    s.followup(e,tp)
+end
+function s.followfilter(c)
+    return c:IsSetCard(SET_CAT) and c:IsType(TYPE_SPELL+TYPE_TRAP) and c:IsSSetable()
+        and (not c:IsLocation(LOCATION_REMOVED) or c:IsFaceup())
+end
+function s.followup(e,tp)
     if Duel.GetLocationCount(tp,LOCATION_SZONE)<=0 then return end
     Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SET)
-    local g=Duel.SelectMatchingCard(tp,s.setfilter,tp,LOCATION_DECK+LOCATION_GRAVE+LOCATION_REMOVED,0,1,1,nil)
-    if #g>0 then Duel.SSet(tp,g) end
+    local g=Duel.SelectMatchingCard(tp,aux.NecroValleyFilter(s.followfilter),tp,
+        LOCATION_DECK+LOCATION_GRAVE+LOCATION_REMOVED,0,1,1,nil)
+    if g:GetCount()>0 then Duel.SSet(tp,g) end
 end
 
 -- Direct Fusion procedure: compatible with MDPro3's legacy script library.
@@ -123,70 +125,18 @@ function s.fuse_register(c,code)
     c:RegisterEffect(removed)
 end
 
-function s.postcon(e,tp,eg,ep,ev,re,r,rp)
-    return e:GetHandler():GetSummonType()==SUMMON_TYPE_SPECIAL+1
+function s.effect2cost(e,tp,eg,ep,ev,re,r,rp,chk)
+    if chk==0 then return Duel.IsExistingMatchingCard(Card.IsAbleToGraveAsCost,tp,LOCATION_EXTRA,0,1,nil) end
+    Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TOGRAVE)
+    local g=Duel.SelectMatchingCard(tp,Card.IsAbleToGraveAsCost,tp,LOCATION_EXTRA,0,1,1,nil)
+    Duel.SendtoGrave(g,REASON_COST)
 end
-
-function s.postfilter(c) return c:IsFaceup() and not c:IsDisabled() end
-function s.posttg(e,tp,eg,ep,ev,re,r,rp,chk,chkc)
-    if chkc then return chkc:IsOnField() and s.postfilter(chkc) end
-    if chk==0 then return Duel.IsExistingTarget(s.postfilter,tp,LOCATION_ONFIELD,LOCATION_ONFIELD,1,nil) end
-    Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_FACEUP)
-    Duel.SelectTarget(tp,s.postfilter,tp,LOCATION_ONFIELD,LOCATION_ONFIELD,1,1,nil)
+function s.effect2target(e,tp,eg,ep,ev,re,r,rp,chk)
+    if chk==0 then return Duel.IsExistingMatchingCard(Card.IsAbleToDeck,tp,LOCATION_ONFIELD,LOCATION_ONFIELD,1,nil) end
+    Duel.SetOperationInfo(0,CATEGORY_TODECK,nil,1,PLAYER_ALL,LOCATION_ONFIELD)
 end
-function s.postop(e,tp,eg,ep,ev,re,r,rp)
-    local tc=Duel.GetFirstTarget()
-    if tc and tc:IsRelateToEffect(e) and tc:IsFaceup() then
-        Duel.NegateRelatedChain(tc,RESET_TURN_SET)
-        local e1=Effect.CreateEffect(e:GetHandler())
-        e1:SetType(EFFECT_TYPE_SINGLE)
-        e1:SetCode(EFFECT_DISABLE)
-        e1:SetReset(RESET_EVENT|RESETS_STANDARD|RESET_PHASE|PHASE_END)
-        tc:RegisterEffect(e1)
-        local e2=e1:Clone()
-        e2:SetCode(EFFECT_DISABLE_EFFECT)
-        tc:RegisterEffect(e2)
-    end
-end
-
-
--- Alpha 0.6: self-Special Summon by destroying a Catastrophe card from Deck.
--- Ext Ryzeal-style hand summoning procedure; deck destruction uses REASON_EFFECT.
-function s.spfilter(c)
-    return c:IsSetCard(0xfcb)
-end
-function s.spcon(e,c)
-    if c==nil then return true end
-    local tp=c:GetControler()
-    return Duel.GetLocationCount(tp,LOCATION_MZONE)>0
-        and Duel.IsExistingMatchingCard(s.spfilter,tp,LOCATION_DECK,0,1,nil)
-end
-function s.sptg(e,tp,eg,ep,ev,re,r,rp,chk,c)
-    Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_DESTROY)
-    local g=Duel.SelectMatchingCard(tp,s.spfilter,tp,LOCATION_DECK,0,1,1,nil)
-    if #g==0 then return false end
-    g:KeepAlive()
-    e:SetLabelObject(g)
-    return true
-end
-function s.spop(e,tp,eg,ep,ev,re,r,rp,c)
-    local g=e:GetLabelObject()
-    if g then
-        Duel.Destroy(g,REASON_EFFECT)
-        g:DeleteGroup()
-        e:SetLabelObject(nil)
-    end
-end
-function s.register_special(c)
-    local e1=Effect.CreateEffect(c)
-    e1:SetType(EFFECT_TYPE_FIELD)
-    e1:SetCode(EFFECT_SPSUMMON_PROC)
-    e1:SetProperty(EFFECT_FLAG_UNCOPYABLE)
-    e1:SetRange(LOCATION_HAND)
-    e1:SetValue(1)
-    e1:SetCondition(s.spcon)
-    e1:SetTarget(s.sptg)
-    e1:SetOperation(s.spop)
-    e1:SetCountLimit(1,id,EFFECT_COUNT_CODE_OATH)
-    c:RegisterEffect(e1)
+function s.effect2operation(e,tp)
+    Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_TODECK)
+    local g=Duel.SelectMatchingCard(tp,Card.IsAbleToDeck,tp,LOCATION_ONFIELD,LOCATION_ONFIELD,1,1,nil)
+    if g:GetCount()>0 then Duel.SendtoDeck(g,nil,SEQ_DECKSHUFFLE,REASON_EFFECT) end
 end

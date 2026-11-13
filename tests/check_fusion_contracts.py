@@ -8,12 +8,13 @@ parser=argparse.ArgumentParser()
 parser.add_argument('--core',type=pathlib.Path,required=True)
 parser.add_argument('--scripts',type=pathlib.Path,required=True)
 parser.add_argument('--baseline',action='store_true')
+parser.add_argument('--pack',type=pathlib.Path,help='Test scripts and card data directly from a generated pack')
 args=parser.parse_args()
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 lib=C.CDLL(str(args.core.resolve()))
 class Data(C.Structure):
  _fields_=[('code',C.c_uint32),('alias',C.c_uint32),('setcode',C.c_uint16*16),('type',C.c_uint32),('level',C.c_uint32),('attribute',C.c_uint32),('race',C.c_uint32),('attack',C.c_int32),('defense',C.c_int32),('lscale',C.c_uint32),('rscale',C.c_uint32),('link_marker',C.c_uint32)]
-original=zipfile.ZipFile(ROOT/'Catastrophe_MDPro3_alpha_v09_fusion_fix.ypk')
+original=zipfile.ZipFile(args.pack or ROOT/'Catastrophe_MDPro3_alpha_v09_fusion_fix.ypk')
 base=zipfile.ZipFile(args.scripts)
 with tempfile.TemporaryDirectory() as d:
  p=pathlib.Path(d)/'cards.cdb';p.write_bytes(original.read('catastrophe.cdb'));db=sqlite3.connect(p)
@@ -23,7 +24,7 @@ buffers=[];logs=[];extra={}
 def reader(name,size):
  n=name.decode().removeprefix('./')
  if n in extra:data=extra[n].encode()
- elif not args.baseline and n.startswith('script/') and (ROOT/n).is_file():data=(ROOT/n).read_bytes()
+ elif not args.baseline and not args.pack and n.startswith('script/') and (ROOT/n).is_file():data=(ROOT/n).read_bytes()
  elif n in original.namelist():data=original.read(n)
  elif n in base.namelist():data=base.read(n)
  else:size[0]=0;return None
@@ -128,20 +129,45 @@ run:SetOperation(function(e)
 end)
 c:RegisterEffect(run)
 ''')
-def run_resolution(name):
+def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=None,option_index=0):
  duel=lib.create_duel(123)
  try:
   assert lib.preload_script(duel,b'script/probe.lua',0)
   lib.start_duel(duel,0)
-  started=False
+  started=0
   for step in range(100):
    result=lib.process(duel)
    out=C.create_string_buffer(65536);length=lib.get_message(duel,out)
+   if any(k==1 for k,s in logs):raise AssertionError(logs)
+   if any(s=='RESOLUTION PASS' for k,s in logs):break
    if result & 0x10000000 and length:
     data=out.raw[:length]
-    if data[0]==11 and not started:
-     started=True
-     lib.set_responsei(duel,5)
+    if data[0]==11 and (started<activations or end_phase):
+     command=7 if started>=activations and end_phase else 6 if battle else 5
+     started+=1
+     if command==5:
+      offset=2
+      for _ in range(5):offset+=1+7*data[offset]
+      count=data[offset];offset+=1
+      for index in range(count):
+       if int.from_bytes(data[offset+index*11+7:offset+index*11+11],"little")==999999:
+        command=5+(index<<16)
+        break
+     lib.set_responsei(duel,command)
+     continue
+    if data[0]==10 and battle:
+     lib.set_responsei(duel,1)
+     continue
+    if data[0]==15:
+     count=data[3]
+     indices=list(range(count))
+     if select_code is not None:
+      matches=[i for i in range(data[5]) if int.from_bytes(data[6+i*8:10+i*8],"little")==select_code]
+      if matches:indices=matches[:count]
+     lib.set_responseb(duel,C.create_string_buffer(bytes([count,*indices])))
+     continue
+    if data[0]==14:
+     lib.set_responsei(duel,option_index)
      continue
     if data[0] in (12,13):
      lib.set_responsei(duel,1)
@@ -192,6 +218,7 @@ observer:SetOperation(function(e)
 end)
 Duel.RegisterEffect(observer,0)
 local run=Effect.CreateEffect(driver)
+run:SetDescription(999999)
 run:SetType(EFFECT_TYPE_IGNITION)
 run:SetRange(LOCATION_MZONE)
 run:SetOperation(function(e) e:Reset(); ACTION end)

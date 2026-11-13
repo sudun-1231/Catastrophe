@@ -22,9 +22,11 @@ function s.initial_effect(c)
         aux.AddFusionProcMix(c,true,true,s.matfilter,s.matfilter)
     end
     local e1=Effect.CreateEffect(c)
+    e1:SetDescription(aux.Stringid(id,0))
     e1:SetCategory(CATEGORY_NEGATE+CATEGORY_DESTROY)
     e1:SetType(EFFECT_TYPE_QUICK_O)
     e1:SetCode(EVENT_CHAINING)
+    e1:SetProperty(EFFECT_FLAG_DAMAGE_STEP+EFFECT_FLAG_DAMAGE_CAL)
     e1:SetRange(LOCATION_MZONE)
     e1:SetCountLimit(1,id)
     e1:SetCondition(s.negcon)
@@ -35,7 +37,8 @@ function s.initial_effect(c)
 end
 
 function s.negcon(e,tp,eg,ep,ev,re,r,rp)
-    return Duel.IsChainNegatable(ev)
+    return rp==1-tp and (re:IsActiveType(TYPE_MONSTER) or re:IsHasType(EFFECT_TYPE_ACTIVATE))
+        and Duel.IsChainNegatable(ev)
 end
 function s.negtg(e,tp,eg,ep,ev,re,r,rp,chk)
     if chk==0 then return true end
@@ -101,7 +104,7 @@ function s.fus_operation(e,tp,eg,ep,ev,re,r,rp)
 end
 function s.fuse_register(c,code)
     local e=Effect.CreateEffect(c)
-    e:SetDescription(aux.Stringid(code,2))
+    e:SetDescription(aux.Stringid(code,1))
     e:SetCategory(CATEGORY_TODECK+CATEGORY_SPECIAL_SUMMON+CATEGORY_FUSION_SUMMON)
     e:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_TRIGGER_O)
     e:SetProperty(EFFECT_FLAG_DELAY)
