@@ -1,169 +1,230 @@
-"""Lua 5.4 registration/filter regression checks using a mocked duel API.
-
-Run: python3 tests/check_fusion_contracts.py
-Optional: --fusion-procedure /path/to/ProjectIgnis/proc_fusion.lua
-This does not emulate a duel or prove MDPro3 engine compatibility.
+"""Native MDPro3 regression tests; requires an externally built core and script.zip.
+Selections and deck-order UI are automated; card movement and Fusion checks are native.
+See FUSION_DEBUG_ALPHA10.md for build commands and exact test scope.
 """
 import argparse
-import ctypes
-import ctypes.util
-import pathlib
-import tempfile
-import zipfile
+import ctypes as C,zipfile,sqlite3,tempfile,pathlib
+parser=argparse.ArgumentParser()
+parser.add_argument('--core',type=pathlib.Path,required=True)
+parser.add_argument('--scripts',type=pathlib.Path,required=True)
+parser.add_argument('--baseline',action='store_true')
+args=parser.parse_args()
+ROOT=pathlib.Path(__file__).resolve().parents[1]
+lib=C.CDLL(str(args.core.resolve()))
+class Data(C.Structure):
+ _fields_=[('code',C.c_uint32),('alias',C.c_uint32),('setcode',C.c_uint16*16),('type',C.c_uint32),('level',C.c_uint32),('attribute',C.c_uint32),('race',C.c_uint32),('attack',C.c_int32),('defense',C.c_int32),('lscale',C.c_uint32),('rscale',C.c_uint32),('link_marker',C.c_uint32)]
+original=zipfile.ZipFile(ROOT/'Catastrophe_MDPro3_alpha_v09_fusion_fix.ypk')
+base=zipfile.ZipFile(args.scripts)
+with tempfile.TemporaryDirectory() as d:
+ p=pathlib.Path(d)/'cards.cdb';p.write_bytes(original.read('catastrophe.cdb'));db=sqlite3.connect(p)
+ rows={r[0]:r for r in db.execute('select id,alias,setcode,type,atk,def,level,race,attribute from datas')}
+buffers=[];logs=[];extra={}
+@C.CFUNCTYPE(C.c_void_p,C.c_char_p,C.POINTER(C.c_int))
+def reader(name,size):
+ n=name.decode().removeprefix('./')
+ if n in extra:data=extra[n].encode()
+ elif not args.baseline and n.startswith('script/') and (ROOT/n).is_file():data=(ROOT/n).read_bytes()
+ elif n in original.namelist():data=original.read(n)
+ elif n in base.namelist():data=base.read(n)
+ else:size[0]=0;return None
+ b=C.create_string_buffer(data);buffers.append(b);size[0]=len(data);return C.addressof(b)
+@C.CFUNCTYPE(C.c_uint32,C.c_uint32,C.POINTER(Data))
+def cardreader(code,p):
+ if code not in rows:return 0
+ r=rows[code];v=p.contents;v.code=r[0];v.alias=r[1];v.setcode[0]=r[2];v.type=r[3];v.attack=r[4];v.defense=r[5];v.level=r[6]&255;v.lscale=(r[6]>>24)&255;v.rscale=(r[6]>>16)&255;v.race=r[7];v.attribute=r[8];return 0
+lib.get_log_message.argtypes=[C.c_void_p,C.c_void_p]
+@C.CFUNCTYPE(C.c_uint32,C.c_void_p,C.c_uint32)
+def handler(duel,kind):
+ b=C.create_string_buffer(4096);lib.get_log_message(duel,b);s=b.value.decode(errors='replace');logs.append((kind,s));return 0
+lib.set_script_reader(reader);lib.set_card_reader(cardreader);lib.set_message_handler(handler)
+lib.create_duel.argtypes=[C.c_ulong];lib.create_duel.restype=C.c_void_p
+lib.end_duel.argtypes=[C.c_void_p];lib.preload_script.argtypes=[C.c_void_p,C.c_char_p,C.c_int]
+def test(name,script):
+ logs.clear();extra['script/probe.lua']=script
+ duel=lib.create_duel(123)
+ try:
+  result=lib.preload_script(duel,b'script/probe.lua',0)
+  print(name,result,logs)
+  if args.baseline:
+   assert any(k==1 and 'Fusion' in s for k,s in logs),(name,logs)
+   print('EXPECTED FAILURE: Alpha 0.9 cannot register Fusion effects against this library')
+  else:
+   assert result and not any(k==1 for k,s in logs),(name,logs)
+ finally:lib.end_duel(duel)
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-CARDS = (98013001, 98013002, 98013003, 98013004, 98013005, 98013013)
-parser = argparse.ArgumentParser()
-parser.add_argument('--fusion-procedure', type=pathlib.Path)
-args = parser.parse_args()
-lua = ctypes.CDLL(ctypes.util.find_library('lua5.4') or 'liblua5.4.so.0')
-lua.luaL_newstate.restype = ctypes.c_void_p
-lua.luaL_openlibs.argtypes = [ctypes.c_void_p]
-lua.luaL_loadstring.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-lua.lua_pcallk.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_longlong, ctypes.c_void_p]
-lua.lua_tolstring.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
-lua.lua_tolstring.restype = ctypes.c_char_p
-lua.lua_close.argtypes = [ctypes.c_void_p]
+test('registration','''Debug.ReloadFieldBegin(0)
+Debug.SetPlayerInfo(0,8000,0,0)
+Debug.SetPlayerInfo(1,8000,0,0)
+for i=1,14 do Debug.AddCard(98013000+i,0,0,LOCATION_DECK,0,POS_FACEDOWN_DEFENSE) end
+Debug.ReloadFieldEnd()
+Debug.Message("registration OK")''')
 
-HARNESS = r'''
-local constants={"LOCATION_HAND","LOCATION_MZONE","LOCATION_GRAVE","LOCATION_REMOVED",
- "EFFECT_TYPE_SINGLE","EFFECT_TYPE_TRIGGER_O","EFFECT_TYPE_FIELD","EFFECT_TYPE_QUICK_O",
- "EFFECT_FLAG_DELAY","EFFECT_FLAG_UNCOPYABLE","EVENT_TO_GRAVE","EVENT_REMOVE",
- "EVENT_SUMMON_SUCCESS","EVENT_SPSUMMON_SUCCESS","EVENT_CHAINING","EFFECT_SPSUMMON_PROC",
- "CATEGORY_TOHAND","CATEGORY_TODECK","CATEGORY_SPECIAL_SUMMON","CATEGORY_FUSION_SUMMON",
- "CATEGORY_NEGATE","CATEGORY_DESTROY","EFFECT_COUNT_CODE_OATH","STATUS_COPYING_EFFECT"}
-for i,name in ipairs(constants) do _G[name]=1 << (i-1) end
-aux={TRUE=function() return true end, Stringid=function() return 0 end}
-function aux.FunctionWithNamedArgs(fn,...)
- local names={...}
- return function(...)
-  local args={...}
-  if type(args[1])=='table' then
-   local values={}
-   for i,name in ipairs(names) do values[i]=args[1][name] end
-   return fn(table.unpack(values,1,#names))
-  end
-  return fn(...)
+def fixture(cards,body):
+ return '''Debug.ReloadFieldBegin(0)
+Debug.SetPlayerInfo(0,8000,0,0)
+Debug.SetPlayerInfo(1,8000,0,0)
+'''+cards+'\nDebug.ReloadFieldEnd()\n'+body+'\nDebug.Message("PASS")'
+if args.baseline: raise SystemExit(0)
+for code in [98013001,98013002,98013003,98013004,98013005,98013013]:
+ for loc in ['LOCATION_GRAVE','LOCATION_REMOVED']:
+  test(f'trigger {code} {loc}',fixture(f'''
+local c=Debug.AddCard({code},0,0,{loc},0,POS_FACEUP_ATTACK)
+Debug.AddCard(98013002,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
+Debug.AddCard(98013001,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
+Debug.AddCard(98013012,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
+''',f'local e=Effect.CreateEffect(c); e:SetType(EFFECT_TYPE_SINGLE); e:SetCode(EFFECT_UPDATE_ATTACK); e:SetValue(0); c:RegisterEffect(e); assert(c{code}.fus_target(e,0,nil,0,0,nil,0,0,0),"fusion target rejected")'))
+for bottom in [False,True]:
+ loc='LOCATION_GRAVE' if bottom else 'LOCATION_HAND'
+ material='LOCATION_REMOVED' if bottom else 'LOCATION_DECK'
+ test(f'Birth target {bottom}',fixture(f'''
+local c=Debug.AddCard(98013008,0,0,{loc},0,POS_FACEUP_ATTACK)
+Debug.AddCard(98013001,0,0,{material},0,POS_FACEUP_ATTACK)
+Debug.AddCard(98013002,0,0,{material},0,POS_FACEUP_ATTACK)
+Debug.AddCard(98013013,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
+''',f'local e=Effect.CreateEffect(c); e:SetType(EFFECT_TYPE_SINGLE); e:SetCode(EFFECT_UPDATE_ATTACK); e:SetValue(0); c:RegisterEffect(e); assert(c98013008.target(e,0,0,{str(bottom).lower()}),"Birth target rejected")'))
+test('no other material',fixture('''
+local c=Debug.AddCard(98013001,0,0,LOCATION_GRAVE,0,POS_FACEUP_ATTACK)
+Debug.AddCard(98013013,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
+''','local e=Effect.CreateEffect(c); e:SetType(EFFECT_TYPE_SINGLE); e:SetCode(EFFECT_UPDATE_ATTACK); e:SetValue(0); c:RegisterEffect(e); assert(not c98013001.fus_target(e,0,nil,0,0,nil,0,0,0))'))
+test('facedown banished mandatory',fixture('''
+local c=Debug.AddCard(98013001,0,0,LOCATION_REMOVED,0,POS_FACEDOWN_DEFENSE)
+Debug.AddCard(98013002,0,0,LOCATION_HAND,0,POS_FACEUP_ATTACK)
+Debug.AddCard(98013013,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
+''','local e=Effect.CreateEffect(c); e:SetType(EFFECT_TYPE_SINGLE); e:SetCode(EFFECT_UPDATE_ATTACK); e:SetValue(0); c:RegisterEffect(e); assert(not c98013001.fus_target(e,0,nil,0,0,nil,0,0,0))'))
+lib.start_duel.argtypes=[C.c_void_p,C.c_int]
+lib.process.argtypes=[C.c_void_p];lib.process.restype=C.c_uint32
+lib.get_message.argtypes=[C.c_void_p,C.c_void_p]
+lib.set_responseb.argtypes=[C.c_void_p,C.c_void_p]
+lib.set_responsei.argtypes=[C.c_void_p,C.c_int]
+logs.clear()
+extra['script/probe.lua']=fixture('''
+local c=Debug.AddCard(98013008,0,0,LOCATION_GRAVE,0,POS_FACEUP_ATTACK)
+local a=Debug.AddCard(98013001,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
+local b=Debug.AddCard(98013002,0,0,LOCATION_REMOVED,0,POS_FACEUP_ATTACK)
+local fc=Debug.AddCard(98013013,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
+for player=0,1 do for i=1,10 do Debug.AddCard(98013006,player,player,LOCATION_DECK,0,POS_FACEDOWN_DEFENSE) end end
+''','''
+Duel.SortDecktop=function(tp,p,count) assert(count==2) end
+Group.Select=function(g,tp,min,max,excluded) return Group.FromCards(g:GetFirst()) end
+Duel.SelectFusionMaterial=function(tp,target,mg,mandatory,chkf)
+ assert(target==fc and mandatory==nil)
+ assert(fc:CheckFusionMaterial(mg,nil,tp))
+ return Group.FromCards(a,b)
+end
+local run=Effect.CreateEffect(c)
+run:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)
+run:SetRange(LOCATION_GRAVE)
+run:SetCode(EVENT_ADJUST)
+run:SetOperation(function(e)
+ e:Reset()
+ assert(c98013008.returncost(e,0,nil,0,0,nil,0,0,0))
+ assert(c98013008.target(e,0,0,true))
+ c98013008.returncost(e,0,nil,0,0,nil,0,0,1)
+ assert(c:IsLocation(LOCATION_DECK),"cost not paid")
+ c98013008.operation2(e,0,nil,0,0,nil,0,0)
+ assert(a:IsLocation(LOCATION_DECK) and b:IsLocation(LOCATION_DECK),"materials not returned")
+ assert(fc:IsLocation(LOCATION_MZONE) and fc:IsSummonType(SUMMON_TYPE_FUSION),"fusion not summoned")
+ Debug.Message("RESOLUTION PASS")
+end)
+c:RegisterEffect(run)
+''')
+def run_resolution(name):
+ duel=lib.create_duel(123)
+ try:
+  assert lib.preload_script(duel,b'script/probe.lua',0)
+  lib.start_duel(duel,0)
+  started=False
+  for step in range(100):
+   result=lib.process(duel)
+   out=C.create_string_buffer(65536);length=lib.get_message(duel,out)
+   if result & 0x10000000 and length:
+    data=out.raw[:length]
+    if data[0]==11 and not started:
+     started=True
+     lib.set_responsei(duel,5)
+     continue
+    if data[0] in (12,13):
+     lib.set_responsei(duel,1)
+     continue
+    if data[0]==16:
+     lib.set_responsei(duel,0 if data[2] else -1)
+     continue
+    if data[0]==19:
+     lib.set_responsei(duel,1)
+     continue
+    assert data[0]==18,("unexpected prompt",list(data),logs)
+    mask=int.from_bytes(data[3:7],"little")
+    bit=next(i for i in range(16) if not mask & (1<<i))
+    response=C.create_string_buffer(bytes([data[1],4 if bit<8 else 8,bit%8]))
+    lib.set_responseb(duel,response)
+   if any(k==1 for k,s in logs):raise AssertionError(logs)
+   if any(s=='RESOLUTION PASS' for k,s in logs):break
+  else:raise AssertionError(('resolution did not finish',logs,result))
+  print(name,logs)
+ finally:lib.end_duel(duel)
+
+run_resolution("Birth cost + real material movement + real Fusion Summon")
+
+for destination,action in [('grave','Duel.SendtoGrave(c,REASON_EFFECT)'),('banished','Duel.Remove(c,POS_FACEUP,REASON_EFFECT)')]:
+ logs.clear()
+ extra['script/probe.lua']=fixture("""
+local c=Debug.AddCard(98013001,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
+local driver=Debug.AddCard(98013003,0,0,LOCATION_MZONE,0,POS_FACEUP_ATTACK)
+local b=Debug.AddCard(98013002,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
+local fc=Debug.AddCard(98013013,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
+for player=0,1 do for i=1,10 do Debug.AddCard(98013006,player,player,LOCATION_DECK,0,POS_FACEDOWN_DEFENSE) end end
+""","""
+Duel.SortDecktop=function(tp,p,count) assert(count==2) end
+Group.Select=function(g,tp,min,max,excluded) return Group.FromCards(g:GetFirst()) end
+Duel.SelectFusionMaterial=function(tp,target,mg,mandatory,chkf)
+ assert(target==fc and mandatory==c,"mandatory handler lost")
+ assert(fc:CheckFusionMaterial(mg,c,tp))
+ return Group.FromCards(c,b)
+end
+local observer=Effect.CreateEffect(fc)
+observer:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)
+observer:SetCode(EVENT_SPSUMMON_SUCCESS)
+observer:SetOperation(function(e)
+ if fc:IsLocation(LOCATION_MZONE) then
+  assert(c:IsLocation(LOCATION_DECK) and b:IsLocation(LOCATION_DECK))
+  Debug.Message("RESOLUTION PASS")
  end
+end)
+Duel.RegisterEffect(observer,0)
+local run=Effect.CreateEffect(driver)
+run:SetType(EFFECT_TYPE_IGNITION)
+run:SetRange(LOCATION_MZONE)
+run:SetOperation(function(e) e:Reset(); ACTION end)
+driver:RegisterEffect(run)
+""".replace('ACTION',action))
+ run_resolution('Real trigger event '+destination)
+
+for bottom in [False,True]:
+ logs.clear()
+ extra['script/probe.lua']=fixture("""
+local c=Debug.AddCard(98013008,0,0,SOURCE,0,POS_FACEUP_ATTACK)
+local a=Debug.AddCard(98013001,0,0,MATERIAL,0,POS_FACEUP_ATTACK)
+local b=Debug.AddCard(98013002,0,0,MATERIAL,0,POS_FACEUP_ATTACK)
+local fc=Debug.AddCard(98013013,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
+for player=0,1 do for i=1,10 do Debug.AddCard(98013006,player,player,LOCATION_DECK,0,POS_FACEDOWN_DEFENSE) end end
+""".replace('SOURCE','LOCATION_GRAVE' if bottom else 'LOCATION_HAND').replace('MATERIAL','LOCATION_REMOVED' if bottom else 'LOCATION_DECK'),"""
+Duel.SortDecktop=function(tp,p,count) assert(count==2) end
+Group.Select=function(g,tp,min,max,excluded) return Group.FromCards(g:GetFirst()) end
+Duel.SelectFusionMaterial=function(tp,target,mg,mandatory,chkf)
+ assert(target==fc and mandatory==nil)
+ assert(fc:CheckFusionMaterial(mg,nil,tp))
+ return Group.FromCards(a,b)
 end
-Card={IsAbleToDeck=function(c) return c.able end}
-Duel={}
-local methods={}
-for _,key in ipairs({'Description','Category','Type','Property','Code','CountLimit','Condition','Target','Operation','Range','Value'}) do
- methods['Set'..key]=function(self,...) self[key]={...} end
-end
-function methods:Clone()
- local copy=setmetatable({}, {__index=methods})
- for key,val in pairs(self) do copy[key]=val end
- return copy
-end
-function methods:GetHandler() return self.handler end
-Effect={CreateEffect=function(c) return setmetatable({handler=c},{__index=methods}) end}
-Fusion={ForcedHandler=function(e) return e:GetHandler() end}
--- If provided, load the official procedure and use its actual AddProcMixN.
-if REFERENCE then aux.FusionProcedure=Fusion; dofile(REFERENCE) end
-local captured
-Fusion.AddProcMix=function(c,sub,insf,...)
- captured={...}
-end
-if not REFERENCE then
- Fusion.AddProcMixN=function(c,sub,insf,filter,count)
-  assert(type(filter)=='function','missing Fusion material predicate')
-  captured={}
-  for i=1,count do captured[i]=filter end
+local observer=Effect.CreateEffect(fc)
+observer:SetType(EFFECT_TYPE_FIELD+EFFECT_TYPE_CONTINUOUS)
+observer:SetCode(EVENT_SPSUMMON_SUCCESS)
+observer:SetOperation(function(e)
+ if fc:IsLocation(LOCATION_MZONE) then
+  assert(a:IsLocation(DESTINATION) and b:IsLocation(DESTINATION))
+  COSTCHECK
+  Debug.Message("RESOLUTION PASS")
  end
-end
-Fusion.SummonEffTG=function(p) assert(type(p)=='table'); return function() return p end end
-Fusion.SummonEffOP=function(p) assert(type(p)=='table'); return function() return p end end
-local s={}
-GetID=function() return s,CARD_ID end
-dofile(SCRIPT_PATH)
-local c={effects={}}
-function c:RegisterEffect(e) table.insert(self.effects,e) end
-function c:EnableReviveLimit() end
-function c:IsStatus() return false end
-s.initial_effect(c)
-if CARD_ID==98013013 then
- assert(captured and #captured==2,'missing two-material Fusion procedure')
- for _,filter in ipairs(captured) do
-  assert(type(filter)=='function','missing Fusion material predicate')
-  assert(filter({IsSetCard=function(_,set) return set==0xfcb end}))
-  assert(not filter({IsSetCard=function() return false end}))
- end
-end
-local grave,removed,search
-for _,eff in ipairs(c.effects) do
- if eff.Code and eff.Code[1]==EVENT_TO_GRAVE then grave=eff end
- if eff.Code and eff.Code[1]==EVENT_REMOVE then removed=eff end
- if eff.Code and eff.Code[1]==EVENT_SUMMON_SUCCESS then search=eff end
-end
-assert(grave and removed,'both event registrations required')
-for _,eff in ipairs({grave,removed}) do
- assert(eff.Type[1]==EFFECT_TYPE_SINGLE+EFFECT_TYPE_TRIGGER_O)
- assert(eff.Property[1]==EFFECT_FLAG_DELAY)
- assert(eff.CountLimit[1]==1 and eff.CountLimit[2][1]==CARD_ID and eff.CountLimit[2][2]==2)
- local p=eff.Target[1]()
- assert(p.gc(eff)==c,'handler must be mandatory')
- assert(p.matfilter==Card.IsAbleToDeck)
- assert(p.extrafil==s.fus_extramat and p.extraop==s.fus_extraop and p.extratg==s.fus_extratg)
- assert(eff.Operation[1]()==p,'target and operation must share parameters')
-end
-assert(grave.CountLimit[2]==removed.CountLimit[2],'clones must share the same limit')
-if search then
- assert(type(search.CountLimit[2])=='table' and search.CountLimit[2][1]==CARD_ID and search.CountLimit[2][2]==1,
-  'search limit must not collide with another card ID or fusion effect')
-end
-local function mat(loc,face,monster,able)
- return {IsLocation=function(_,mask) return (loc & mask)~=0 end,
- IsFaceup=function() return face end,IsMonster=function() return monster end,
- IsAbleToDeck=function() return able end}
-end
-assert(s.fus_matfilter(mat(LOCATION_GRAVE,false,true,true)))
-assert(s.fus_matfilter(mat(LOCATION_REMOVED,true,true,true)))
-assert(not s.fus_matfilter(mat(LOCATION_REMOVED,false,true,true)))
-assert(not s.fus_matfilter(mat(LOCATION_GRAVE,true,false,true)))
-assert(not s.fus_matfilter(mat(LOCATION_GRAVE,true,true,false)))
-local mask
-Duel.GetMatchingGroup=function(filter,tp,own,other,exclude)
- assert(filter==s.fus_matfilter and tp==0 and other==0 and exclude==nil)
- mask=own
- return 'extra-materials'
-end
-assert(s.fus_extramat(grave,0,nil)=='extra-materials')
-assert(mask==(LOCATION_GRAVE|LOCATION_REMOVED))
-assert(removed.Condition[1]({GetHandler=function() return mat(LOCATION_REMOVED,true,true,true) end}))
-assert(not removed.Condition[1]({GetHandler=function() return mat(LOCATION_REMOVED,false,true,true) end}))
-'''
-
-
-def run(card, path):
-    # Lua long strings avoid shell interpolation; generated paths have no closing delimiter.
-    prefix = f'CARD_ID={card}; SCRIPT_PATH=[==[{path}]==]; '
-    if args.fusion_procedure:
-        prefix += f'REFERENCE=[==[{args.fusion_procedure.resolve()}]==]; '
-    state = lua.luaL_newstate()
-    if not state:
-        raise RuntimeError('Lua allocation failed')
-    try:
-        lua.luaL_openlibs(state)
-        result = lua.luaL_loadstring(state, (prefix + HARNESS).encode())
-        if not result:
-            result = lua.lua_pcallk(state, 0, 0, 0, 0, None)
-        return lua.lua_tolstring(state, -1, None).decode() if result else None
-    finally:
-        lua.lua_close(state)
-
-
-for card in CARDS:
-    error = run(card, ROOT / f'script/c{card}.lua')
-    assert error is None, f'{card}: {error}'
-    print(f'PASS c{card}: registration, limits, material filters, forced-handler wiring')
-with tempfile.TemporaryDirectory() as folder:
-    with zipfile.ZipFile(ROOT / 'Catastrophe_MDPro3_alpha_v08_garura.ypk') as pack:
-        for card in (98013001, 98013013):
-            path = pathlib.Path(folder) / f'c{card}.lua'
-            path.write_bytes(pack.read(f'script/c{card}.lua'))
-            error = run(card, path)
-            assert error is not None, f'Original {card} unexpectedly passed'
-            print(f'EXPECTED REGRESSION c{card}: {error}')
-print('6 updated scripts passed. Mock checks do not validate duel execution.')
+end)
+Duel.RegisterEffect(observer,0)
+""".replace('DESTINATION','LOCATION_DECK' if bottom else 'LOCATION_GRAVE').replace('COSTCHECK','assert(c:IsLocation(LOCATION_DECK))' if bottom else ''))
+ run_resolution('Real Birth activation '+('2' if bottom else '1'))
