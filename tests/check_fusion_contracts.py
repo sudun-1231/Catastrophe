@@ -129,7 +129,7 @@ run:SetOperation(function(e)
 end)
 c:RegisterEffect(run)
 ''')
-def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=None,option_index=0,battle_command=1):
+def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=None,option_index=0,battle_command=1,yes_no=1):
  duel=lib.create_duel(123)
  try:
   assert lib.preload_script(duel,b'script/probe.lua',0)
@@ -173,7 +173,7 @@ def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=N
      lib.set_responseb(duel,C.create_string_buffer(bytes(range(data[2]))))
      continue
     if data[0] in (12,13):
-     lib.set_responsei(duel,1)
+     lib.set_responsei(duel,yes_no)
      continue
     if data[0]==16:
      lib.set_responsei(duel,0 if data[2] else -1)
