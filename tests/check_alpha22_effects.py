@@ -33,7 +33,7 @@ local selected=Debug.AddCard(98013020,{owner},{owner},LOCATION_GRAVE,0,POS_FACEU
 local cost=Debug.AddCard(98013006,{owner},{owner},LOCATION_DECK,0,POS_FACEDOWN_DEFENSE)
 '''
    setup='''Duel.SelectMatchingCard=function(tp,filter,p,l1,l2,min,max,excluded,...)
- for _,card in ipairs({cost,selected}) do
+ for _,card in ipairs(l1==LOCATION_DECK and {cost,selected} or {selected,cost}) do
   if card~=excluded and card:IsControler(p) and card:IsLocation(l1) and filter(card,...) then return Group.FromCards(card) end
  end
  error("no expected candidate")
@@ -71,7 +71,8 @@ local fc=Debug.AddCard(98013013,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
 ''','''
 Group.Select=function(g,tp,min,max,excluded) return Group.FromCards(fc) end
 Duel.SelectFusionMaterial=function(tp,target,mg,mandatory,chkf)
- assert(mandatory==c and mg:IsContains(c) and mg:IsContains(material))
+ if FUSION_SELF_OPTIONAL then assert(mandatory==nil) else assert(mandatory==c) end
+ assert(mg:IsContains(c) and mg:IsContains(material))
  assert(fc:CheckFusionMaterial(mg,c,tp))
  return Group.FromCards(c,material)
 end
@@ -166,7 +167,7 @@ local spell=Debug.AddCard(98013006,0,0,LOCATION_GRAVE,0,POS_FACEUP_ATTACK)
 ''',f'''
 assert(not c{code}.searchfilter(facedown) and c{code}.searchfilter(faceup))
 assert(not c{code}.searchfilter(noncat))
-assert(c{code}.searchfilter(spell)=={str(code==98013021).lower()})
+assert(c{code}.searchfilter(spell)=={str(code==98013021 or state['SELF_OPTIONAL']).lower()})
 '''))
 test('Invasion requires a legal Special Summon candidate',fixture('''
 local c=Debug.AddCard(98013021,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
@@ -174,7 +175,7 @@ Debug.AddCard(98013020,0,0,LOCATION_REMOVED,0,POS_FACEDOWN_DEFENSE)
 ''','''local e=Effect.CreateEffect(c)
 assert(not c98013021.sptarget(e,0,nil,0,0,nil,0,1,0))
 '''))
-test('Forerunner mandatory handler cannot be omitted',fixture('''
+test('Forerunner handler material requirement follows card text',fixture('''
 local c=Debug.AddCard(98013020,0,0,LOCATION_GRAVE,0,POS_FACEUP_ATTACK)
 Debug.AddCard(98013001,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
 Debug.AddCard(98013002,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
@@ -182,5 +183,5 @@ Debug.AddCard(98013013,0,0,LOCATION_EXTRA,0,POS_FACEDOWN_DEFENSE)
 ''','''
 local block=Effect.CreateEffect(c);block:SetType(EFFECT_TYPE_SINGLE);block:SetCode(EFFECT_CANNOT_TO_DECK);c:RegisterEffect(block)
 local e=Effect.CreateEffect(c);e:SetType(EFFECT_TYPE_SINGLE);e:SetCode(EFFECT_UPDATE_ATTACK);e:SetValue(0);c:RegisterEffect(e)
-assert(not c98013020.fus_target(e,0,nil,0,0,nil,0,0,0))
+assert(c98013020.fus_target(e,0,nil,0,0,nil,0,0,0)==FUSION_SELF_OPTIONAL)
 '''))

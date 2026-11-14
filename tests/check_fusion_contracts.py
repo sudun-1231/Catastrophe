@@ -19,6 +19,7 @@ base=zipfile.ZipFile(args.scripts)
 with tempfile.TemporaryDirectory() as d:
  p=pathlib.Path(d)/'cards.cdb';p.write_bytes(original.read('catastrophe.cdb'));db=sqlite3.connect(p)
  rows={r[0]:r for r in db.execute('select id,alias,setcode,type,atk,def,level,race,attribute from datas')}
+ SELF_OPTIONAL='이 카드를 포함' not in db.execute('select desc from texts where id=98013001').fetchone()[0]
 buffers=[];logs=[];extra={}
 @C.CFUNCTYPE(C.c_void_p,C.c_char_p,C.POINTER(C.c_int))
 def reader(name,size):
@@ -64,7 +65,7 @@ def fixture(cards,body):
  return '''Debug.ReloadFieldBegin(0)
 Debug.SetPlayerInfo(0,8000,0,0)
 Debug.SetPlayerInfo(1,8000,0,0)
-'''+cards+'\nDebug.ReloadFieldEnd()\n'+body+'\nDebug.Message("PASS")'
+'''+('local FUSION_SELF_OPTIONAL='+str(SELF_OPTIONAL).lower()+'\n')+cards+'\nDebug.ReloadFieldEnd()\n'+body+'\nDebug.Message("PASS")'
 if args.baseline: raise SystemExit(0)
 for code in [98013001,98013002,98013003,98013004,98013005,98013013]:
  for loc in ['LOCATION_GRAVE','LOCATION_REMOVED']:
@@ -206,7 +207,7 @@ for player=0,1 do for i=1,10 do Debug.AddCard(98013006,player,player,LOCATION_DE
 Duel.SortDecktop=function(tp,p,count) assert(count==2) end
 Group.Select=function(g,tp,min,max,excluded) return Group.FromCards(g:GetFirst()) end
 Duel.SelectFusionMaterial=function(tp,target,mg,mandatory,chkf)
- assert(target==fc and mandatory==c,"mandatory handler lost")
+ assert(target==fc); if FUSION_SELF_OPTIONAL then assert(mandatory==nil) else assert(mandatory==c,"mandatory handler lost") end
  assert(fc:CheckFusionMaterial(mg,c,tp))
  return Group.FromCards(c,b)
 end

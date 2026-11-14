@@ -53,7 +53,7 @@ watch:SetOperation(function()
 end)
 Duel.RegisterEffect(watch,0)
 '''.replace('FINISH','if Duel.GetFieldGroupCount(0,LOCATION_HAND,0)>=2 then Debug.Message("RESOLUTION PASS") end' if code==98013016 else 'if enemy:IsLocation(LOCATION_REMOVED) then assert(c:IsStatus(STATUS_PROC_COMPLETE));Debug.Message("RESOLUTION PASS") end'))
- run(f'{code} actual hand ignition + cost + follow-up')
+ run(f'{code} actual hand ignition + cost + follow-up',select_code=99998001 if code==98013017 else None)
 # GY / banish delayed searches and Link recoveries.
 for code in [98013016,98013017,98013018,98013019]:
  for removed in [False,True]:

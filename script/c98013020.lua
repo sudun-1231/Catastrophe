@@ -22,6 +22,9 @@ function s.initial_effect(c)
  search:SetCountLimit(1,198013202)
  search:SetTarget(s.searchtarget)
  search:SetOperation(s.searchoperation)
+ local normal=search:Clone()
+ normal:SetCode(EVENT_SUMMON_SUCCESS)
+ c:RegisterEffect(normal)
  c:RegisterEffect(search)
  s.fuse_register(c,id)
 end
@@ -42,7 +45,7 @@ function s.spoperation(e,tp)
  end
 end
 function s.searchfilter(c)
- return c:IsSetCard(SET_CAT) and c:IsType(TYPE_MONSTER) and c:IsAbleToHand()
+ return c:IsSetCard(SET_CAT) and c:IsAbleToHand()
   and (not c:IsLocation(LOCATION_REMOVED) or c:IsFaceup())
 end
 function s.searchtarget(e,tp,eg,ep,ev,re,r,rp,chk)
@@ -71,25 +74,20 @@ function s.fus_filter(c,e,tp,mg,mandatory)
         and c:CheckFusionMaterial(mg,mandatory,tp)
 end
 function s.fus_target(e,tp,eg,ep,ev,re,r,rp,chk)
-    local c=e:GetHandler()
     local mg=s.fus_group(e,tp)
-    if chk==0 then return mg:IsContains(c)
-        and Duel.IsExistingMatchingCard(s.fus_filter,tp,LOCATION_EXTRA,0,1,nil,e,tp,mg,c) end
+    if chk==0 then return Duel.IsExistingMatchingCard(s.fus_filter,tp,LOCATION_EXTRA,0,1,nil,e,tp,mg,nil) end
     Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,nil,1,tp,LOCATION_EXTRA)
-    Duel.SetOperationInfo(0,CATEGORY_TODECK,c,1,tp,0)
+    Duel.SetOperationInfo(0,CATEGORY_TODECK,nil,0,tp,LOCATION_HAND+LOCATION_MZONE+LOCATION_GRAVE+LOCATION_REMOVED)
 end
 function s.fus_operation(e,tp,eg,ep,ev,re,r,rp)
-    local c=e:GetHandler()
-    if not c:IsRelateToEffect(e) then return end
     local mg=s.fus_group(e,tp)
-    if not mg:IsContains(c) then return end
-    local candidates=Duel.GetMatchingGroup(s.fus_filter,tp,LOCATION_EXTRA,0,nil,e,tp,mg,c)
+    local candidates=Duel.GetMatchingGroup(s.fus_filter,tp,LOCATION_EXTRA,0,nil,e,tp,mg,nil)
     if candidates:GetCount()==0 then return end
     Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_SPSUMMON)
     local fc=candidates:Select(tp,1,1,nil):GetFirst()
     if not fc then return end
-    local materials=Duel.SelectFusionMaterial(tp,fc,mg,c,tp)
-    if not materials:IsContains(c) then return end
+    local materials=Duel.SelectFusionMaterial(tp,fc,mg,nil,tp)
+    if materials:GetCount()==0 then return end
     fc:SetMaterial(materials)
     local hidden=materials:Filter(Card.IsFacedown,nil)
     if hidden:GetCount()>0 then Duel.ConfirmCards(1-tp,hidden) end

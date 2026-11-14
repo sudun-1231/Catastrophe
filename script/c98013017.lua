@@ -14,8 +14,7 @@ function s.initial_effect(c)
  c:RegisterEffect(limit)
  local sp=Effect.CreateEffect(c)
  sp:SetDescription(aux.Stringid(id,0))
- sp:SetCategory(CATEGORY_SPECIAL_SUMMON+CATEGORY_REMOVE)
- sp:SetProperty(EFFECT_FLAG_CARD_TARGET)
+ sp:SetCategory(CATEGORY_SPECIAL_SUMMON)
  sp:SetType(EFFECT_TYPE_IGNITION)
  sp:SetRange(LOCATION_HAND)
  sp:SetCountLimit(1,198013171)
@@ -23,6 +22,16 @@ function s.initial_effect(c)
  sp:SetTarget(s.summontarget)
  sp:SetOperation(s.summonoperation)
  c:RegisterEffect(sp)
+ -- Optional follow-up starts a new Chain only after this hand effect summons it.
+ local banish=Effect.CreateEffect(c)
+ banish:SetDescription(aux.Stringid(id,4))
+ banish:SetCategory(CATEGORY_REMOVE)
+ banish:SetType(EFFECT_TYPE_SINGLE+EFFECT_TYPE_TRIGGER_O)
+ banish:SetProperty(EFFECT_FLAG_DELAY+EFFECT_FLAG_CARD_TARGET)
+ banish:SetCode(EVENT_CUSTOM+id)
+ banish:SetTarget(s.banishtarget)
+ banish:SetOperation(s.banishoperation)
+ c:RegisterEffect(banish)
  s.registerprotection(c)
  s.registergrave(c,198013174,3)
 end
@@ -37,16 +46,24 @@ function s.summoncost(e,tp,eg,ep,ev,re,r,rp,chk)
  if g:GetCount()>0 and Duel.Destroy(g,REASON_COST)>0 then e:SetLabel(1) end
 end
 function s.summontarget(e,tp,eg,ep,ev,re,r,rp,chk)
- if chk==0 then return Duel.GetLocationCount(tp,LOCATION_MZONE)>0 and e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,true,false) and Duel.IsExistingTarget(s.banishfilter,tp,LOCATION_ONFIELD,LOCATION_ONFIELD,1,nil,e) end
+ if chk==0 then return Duel.GetLocationCount(tp,LOCATION_MZONE)>0 and e:GetHandler():IsCanBeSpecialSummoned(e,0,tp,true,false) end
  Duel.SetOperationInfo(0,CATEGORY_SPECIAL_SUMMON,e:GetHandler(),1,0,0)
- Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_REMOVE)
- Duel.SelectTarget(tp,s.banishfilter,tp,LOCATION_ONFIELD,LOCATION_ONFIELD,1,1,nil,e)
 end
 function s.summonoperation(e,tp)
  local c=e:GetHandler()
  if e:GetLabel()~=1 or not c:IsRelateToEffect(e) or not c:IsLocation(LOCATION_HAND) or Duel.GetLocationCount(tp,LOCATION_MZONE)<=0 then return end
  if Duel.SpecialSummon(c,0,tp,tp,true,false,POS_FACEUP)==0 then return end
  c:CompleteProcedure()
+ Duel.RaiseSingleEvent(c,EVENT_CUSTOM+id,e,0,tp,tp,0)
+end
+function s.banishtarget(e,tp,eg,ep,ev,re,r,rp,chk,chkc)
+ if chkc then return chkc:IsOnField() and s.banishfilter(chkc,e) end
+ if chk==0 then return Duel.IsExistingTarget(s.banishfilter,tp,LOCATION_ONFIELD,LOCATION_ONFIELD,1,nil,e) end
+ Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_REMOVE)
+ local g=Duel.SelectTarget(tp,s.banishfilter,tp,LOCATION_ONFIELD,LOCATION_ONFIELD,1,1,nil,e)
+ Duel.SetOperationInfo(0,CATEGORY_REMOVE,g,1,0,0)
+end
+function s.banishoperation(e,tp)
  local target=Duel.GetFirstTarget()
  if target and target:IsRelateToEffect(e) and s.banishfilter(target,e) then Duel.Remove(target,POS_FACEUP,REASON_EFFECT) end
 end
