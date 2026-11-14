@@ -78,7 +78,7 @@ for hand in [False,True]:
 local driver=Debug.AddCard(98013005,0,0,LOCATION_MZONE,0,POS_FACEUP_ATTACK)
 local lancer=Debug.AddCard(98013002,{lancer_owner},{lancer_owner},LOCATION_MZONE,1,POS_FACEUP_ATTACK)
 local hand1=Debug.AddCard(98013006,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
-local hand2=Debug.AddCard(98013007,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
+local hand2=Debug.AddCard(98013011,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
 for player=0,1 do for i=1,10 do Debug.AddCard(98013006,player,player,LOCATION_DECK,0,POS_FACEDOWN_DEFENSE) end end
 '''
   body='''
