@@ -145,7 +145,8 @@ function s.effect2operation(e,tp)
     local other=selected[1]~=tp and selected[2] or 0
     local g
     if selected[2]==LOCATION_HAND then
-        g=Duel.GetMatchingGroup(Card.IsDestructable,tp,own,other,nil):RandomSelect(tp,1)
+        -- The whole chosen hand is the random pool; its contents are not chosen by the player.
+        g=Duel.GetFieldGroup(tp,own,other):RandomSelect(tp,1)
     else
         Duel.Hint(HINT_SELECTMSG,tp,HINTMSG_DESTROY)
         g=Duel.SelectMatchingCard(tp,Card.IsDestructable,tp,own,other,1,1,nil)
