@@ -32,7 +32,7 @@ def reader(name,size):
 @C.CFUNCTYPE(C.c_uint32,C.c_uint32,C.POINTER(Data))
 def cardreader(code,p):
  if code not in rows:return 0
- r=rows[code];v=p.contents;v.code=r[0];v.alias=r[1];v.setcode[0]=r[2];v.type=r[3];v.attack=r[4];v.defense=r[5];v.level=r[6]&255;v.lscale=(r[6]>>24)&255;v.rscale=(r[6]>>16)&255;v.race=r[7];v.attribute=r[8];return 0
+ r=rows[code];v=p.contents;v.code=r[0];v.alias=r[1];v.setcode[0]=r[2];v.type=r[3];v.attack=r[4];v.defense=0 if r[3]&0x4000000 else r[5];v.level=r[6]&255;v.lscale=(r[6]>>24)&255;v.rscale=(r[6]>>16)&255;v.race=r[7];v.attribute=r[8];v.link_marker=r[5] if r[3]&0x4000000 else 0;return 0
 lib.get_log_message.argtypes=[C.c_void_p,C.c_void_p]
 @C.CFUNCTYPE(C.c_uint32,C.c_void_p,C.c_uint32)
 def handler(duel,kind):
@@ -129,7 +129,7 @@ run:SetOperation(function(e)
 end)
 c:RegisterEffect(run)
 ''')
-def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=None,option_index=0,battle_command=1,yes_no=1):
+def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=None,option_index=0,battle_command=1,yes_no=1,first_command=5):
  duel=lib.create_duel(123)
  try:
   assert lib.preload_script(duel,b'script/probe.lua',0)
@@ -143,7 +143,7 @@ def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=N
    if result & 0x10000000 and length:
     data=out.raw[:length]
     if data[0]==11 and (started<activations or end_phase):
-     command=7 if started>=activations and end_phase else 6 if battle else 5
+     command=7 if started>=activations and end_phase else 6 if battle else first_command
      started+=1
      if command==5:
       offset=2
