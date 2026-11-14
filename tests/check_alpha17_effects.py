@@ -12,7 +12,7 @@ for location in ['LOCATION_DECK','LOCATION_GRAVE','LOCATION_REMOVED']:
 local spell=Debug.AddCard(98013007,0,0,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
 local searched=Debug.AddCard(98013006,0,0,{location},0,POS_FACEUP_ATTACK)
 local target=Debug.AddCard(98013005,1,1,LOCATION_MZONE,0,POS_FACEUP_ATTACK)
-local hand=Debug.AddCard(98013011,1,1,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
+local hand=Debug.AddCard(98013006,1,1,LOCATION_HAND,0,POS_FACEDOWN_DEFENSE)
 for player=0,1 do for i=1,10 do Debug.AddCard(98013006,player,player,LOCATION_DECK,0,POS_FACEDOWN_DEFENSE) end end
 ''','''
 assert(spell:IsType(TYPE_QUICKPLAY),"Threshold must be a Quick-Play Spell in the DB")

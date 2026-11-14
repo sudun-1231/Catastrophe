@@ -38,7 +38,7 @@ Duel.RegisterEffect(observer,0)
 '''
   if opponent:
    check='assert(not resolved,"opponent effect was not negated"); assert(driver:IsLocation(DEST),"negated card not moved")'
-   check=check.replace('DEST','LOCATION_REMOVED' if code==98013004 else 'LOCATION_GRAVE')
+   check=check.replace('DEST','LOCATION_REMOVED' if code==98013004 else 'LOCATION_DECK' if code==98013011 else 'LOCATION_GRAVE')
    if code==98013004:check+='; assert(negator:IsLocation(LOCATION_GRAVE),"Magician did not destroy itself")'
   else:check='assert(resolved and driver:IsLocation(LOCATION_MZONE),"own effect must not be negated")'
   extra['script/probe.lua']=fixture(cards,body.replace('CHECK',check))
@@ -210,7 +210,7 @@ observer:SetOperation(function()
 end)
 Duel.RegisterEffect(observer,0)
 ''')
- run(f'{code} same-name negate once per turn',activations=2)
+ run(f'{code} '+('multiple Counterattack responses allowed' if code==98013011 else 'same-name negate once per turn'),activations=2)
 
 # No face-up archetype card/GY card: Counterattack cannot negate.
 test('Counterattack prerequisite and facedown banished recovery',fixture('''

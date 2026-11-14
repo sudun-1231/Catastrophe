@@ -56,9 +56,9 @@ def test(name,script):
 test('registration','''Debug.ReloadFieldBegin(0)
 Debug.SetPlayerInfo(0,8000,0,0)
 Debug.SetPlayerInfo(1,8000,0,0)
-for i=1,14 do Debug.AddCard(98013000+i,0,0,LOCATION_DECK,0,POS_FACEDOWN_DEFENSE) end
+for i=1,CARD_COUNT do Debug.AddCard(98013000+i,0,0,LOCATION_DECK,0,POS_FACEDOWN_DEFENSE) end
 Debug.ReloadFieldEnd()
-Debug.Message("registration OK")''')
+Debug.Message("registration OK")'''.replace("CARD_COUNT",str(len(rows))))
 
 def fixture(cards,body):
  return '''Debug.ReloadFieldBegin(0)
@@ -129,7 +129,7 @@ run:SetOperation(function(e)
 end)
 c:RegisterEffect(run)
 ''')
-def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=None,option_index=0):
+def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=None,option_index=0,battle_command=1):
  duel=lib.create_duel(123)
  try:
   assert lib.preload_script(duel,b'script/probe.lua',0)
@@ -156,7 +156,7 @@ def run_resolution(name,battle=False,end_phase=False,activations=1,select_code=N
      lib.set_responsei(duel,command)
      continue
     if data[0]==10 and battle:
-     lib.set_responsei(duel,1)
+     lib.set_responsei(duel,battle_command)
      continue
     if data[0]==15:
      count=data[3]
