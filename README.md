@@ -4,7 +4,7 @@ MDPro3 커스텀 카드군 「카타스트로피」.
 
 현재 테스트 팩: **Alpha 0.25 — 위험 감지 ① 구현·랜서 ② 검증**
 
-- [Alpha 0.25 YPK 다운로드](https://github.com/sudun-1231/Catastrophe/raw/refs/heads/codex/alpha09-fusion-fix/Catastrophe_MDPro3_alpha_v25_danger_lancer.ypk)
+- [Alpha 0.25 YPK 다운로드](https://github.com/sudun-1231/Catastrophe/raw/refs/heads/main/Catastrophe_MDPro3_alpha_v25_danger_lancer.ypk)
 - [변경 사항·검증 범위](EFFECT_DEBUG_ALPHA25.md)
 
 MDPro3를 종료한 뒤 이전 Catastrophe 팩을 백업하고 `Expansions`에는 최신 팩 하나만 넣어 다시 시작하세요. 공개 MDPro3 미러의 네이티브 코어와 동봉 Lua에서 총 261개 시나리오를 검증했습니다. 사용 중인 클라이언트 버전 및 Unity UI에서의 검증은 별도입니다.
